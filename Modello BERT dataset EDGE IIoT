@@ -159,19 +159,19 @@ def tokenize_function(examples):
 
 tokenized_datasets = dataset.map(tokenize_function, batched=True)
 
-
+batchN = 10
 train_dataset = tokenized_datasets["train"].to_tf_dataset(
     columns=["input_ids", "attention_mask"], # Input al modello
     label_cols=["label"],  # Output del modello 
     shuffle=True,
-    batch_size=10,
+    batch_size=batchN,
 )
 
 test_dataset = tokenized_datasets["test"].to_tf_dataset(
     columns=["input_ids", "attention_mask"],
     label_cols=["label"],
-    shuffle=False,
-    batch_size=10,
+    shuffle=True,
+    batch_size=batchN,
 )
 
 
