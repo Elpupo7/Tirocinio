@@ -4,7 +4,7 @@ import pandas as pd
 import os
 import pandas as pd
 from datasets import load_dataset, Dataset, DatasetDict
-from transformers import BertTokenizer
+from transformers import BertTokenizer, BertForSequenceClassification, AdamW, get_linear_schedule_with_warmup
 
 drive.mount('/content/drive')
 file_path = "/content/drive/MyDrive/Test_dati_modello/windows10_dataset.csv"
@@ -84,8 +84,6 @@ batch_size = 36
 train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
 len(train_loader)
-
-from transformers import BertTokenizer, BertForSequenceClassification, AdamW, get_linear_schedule_with_warmup
 
 model = BertForSequenceClassification.from_pretrained(
     "bert-base-uncased",
