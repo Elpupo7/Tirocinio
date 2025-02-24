@@ -85,7 +85,7 @@ import os
 import pandas as pd
 import tensorflow as tf
 from datasets import load_dataset, Dataset, DatasetDict
-from transformers import BertTokenizer
+from transformers import BertTokenizer, BertForSequenceClassification, AdamW
 
 df_full = pd.read_csv("preprocessed_DNN.csv", delimiter=",")
 
