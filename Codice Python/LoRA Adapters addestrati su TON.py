@@ -38,6 +38,7 @@ attack_samples = {
 }
 
 df1 = pd.concat(list(attack_samples.values())).sample(frac=1, random_state=42)
+# df1 = pd.concat(list(attack_dfs.values())).sample(frac=1, random_state=42) # SE SI VUOLE ADDESTARE IL MODELLO SULL'INTERO DATASET TON
 print("Dimensione del nuovo DataFrame:", df1.shape)
 print("Distribuzione di Attack_label:")
 print(df1["Attack_label"].value_counts())
