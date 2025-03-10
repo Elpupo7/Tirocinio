@@ -202,29 +202,81 @@ with torch.no_grad():
         attention_mask = batch["attention_mask"].to(device)
         labels = batch["labels"].to(device)
 
-        outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+        outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels) # Modello calcola già i loss
 
-        loss = outputs.loss  # Il modello ci dà già la loss
-        logits = outputs.logits  # Logits per le predizioni
-
+        loss = outputs.loss 
+        logits = outputs.logits 
         test_loss += loss.item()
 
         preds = torch.argmax(logits, dim=1)
         correct += (preds == labels).sum().item()
         total += labels.size(0)
-        # Accumula le predizioni e le etichette reali
+        
         all_preds.extend(preds.cpu().numpy())
         all_labels.extend(labels.cpu().numpy())
-        conta += 1
-        if conta % 20 == 0:
-          print(f"test {conta}")
-
+# Calcolo metriche
 test_loss /= len(test_loader)
 test_accuracy = correct / total
-# Calcola Precision, Recall e F1-Score (usa 'weighted' o 'macro' in base al tuo dataset)
 precision, recall, f1, _ = precision_recall_fscore_support(all_labels, all_preds, average='weighted')
+
 print(f"Test Loss = {test_loss:.4f}, Test Accuracy = {test_accuracy:.4f}")
 print(f"Precision = {precision:.4f}, Recall = {recall:.4f}, F1-Score = {f1:.4f}")
+
+
+
+
+# Prova del modello
+def predict_attack(model, sample_row, id2label, tokenizer, device):
+    # "Testualizzazione"
+    sample_text = combine_features(sample_row)["text"]
+
+    # Tokenizzazione
+    inputs = tokenizer(sample_text, padding="max_length", truncation=True, max_length=500, return_tensors="pt")
+    
+    input_ids = inputs["input_ids"].to(device)
+    attention_mask = inputs["attention_mask"].to(device)
+    
+    model.eval()
+    with torch.no_grad():
+        outputs = model(input_ids=input_ids, attention_mask=attention_mask)
+
+    logits = outputs.logits
+    # Predizione
+    predicted_class = torch.argmax(logits, dim=1).cpu().numpy()[0]
+    predicted_label = id2label[predicted_class]
+
+    return predicted_label
+
+
+
+attack_df = df[df["Attack_label"] == 1]
+# Estrai una riga casuale con un attacco sicuro
+sample_row = attack_df.sample(n=1, random_state=None).iloc[0]
+
+# Estrazione di una riga casuale
+#sample_row = df_full_try.sample(n=1, random_state=None).iloc[0]
+
+# Predizione
+predicted_label = predict_attack(model, sample_row, id2label, tokenizer, device)
+print("Attack_label:", sample_row['Attack_label'])
+print("Attack_type:", sample_row['Attack_type'])
+print("Predicted label:", predicted_label)
+
+
+# Prova del modello su più esempi di uno stesso tipo di attacco
+attack_type = 'MITM'
+attack_df = df[df["Attack_type"] == attack_type]
+attack_df_limited = attack_df.sample(n=15)
+print(len(attack_df))
+print(type(attack_df))
+print(attack_df["Attack_type"].value_counts())
+for index, row in attack_df_limited.iterrows():
+    if row['Attack_type'] == attack_type:
+      predicted_label = predict_attack(model, row, id2label, tokenizer, device)
+      print("Attack_label:", row['Attack_label'])
+      print("Attack_type:", row['Attack_type'])
+      print("Predicted label:", predicted_label)
+      print('index: ', index,'\n')
 
 
 
