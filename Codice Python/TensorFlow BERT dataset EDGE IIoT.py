@@ -149,18 +149,3 @@ print(sample_row['Attack_label'])
 print(sample_row['Attack_type'])
 print("Predicted label:", predicted_label)
 
-
-
-# PER PROVARE UNA RIGA CASUALE
-#df = pd.read_csv("preprocessed_DNN.csv")
-# Per estarre un esempio casuale
-#sample_row = attack_df.sample(n=1, random_state=None).iloc[0]
-
-# Estrazione di una riga casuale (tipo Pandas Series)
-#sample_row = df.sample(n=1, random_state=None).iloc[0]
-
-# Predizione del tipo di attacco sulla riga casuale estratta
-#predicted_label = predict_attack(model, sample_row, id2label)
-#print(sample_row['Attack_label'])
-#print(sample_row['Attack_type'])
-#print("Predicted label:", predicted_label)
