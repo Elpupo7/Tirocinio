@@ -214,12 +214,10 @@ print("Predicted label:", predicted_label)
 
 
 # Per provare più predizioni di uno stesso tipo di attacco assieme:
-
 attack_type = 'Normal'
 attack_df = df[df["type"] == attack_type]
-
 # Selezione casuale
-attack_df_limited = attack_df.sample(n=10, random_state=42)  # Imposta random_state per riproducibilità
+attack_df_limited = attack_df.sample(n=10)
 
 print('Esempi totali presenti nel dataset del tipo scelto: ',len(attack_df))
 
