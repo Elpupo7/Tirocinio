@@ -97,6 +97,7 @@ test_dataset = tokenized_datasets["test"].to_tf_dataset(
     batch_size=20,
 )
 
+# Metriche Recall, Precision, F1 score (chiesto a chatgpt) usando Macro-Average, per dare lo stesso peso ad ogni classe 
 
 class MacroPrecision(tf.keras.metrics.Metric):
     def __init__(self, name="macro_precision", num_classes=15, **kwargs):
