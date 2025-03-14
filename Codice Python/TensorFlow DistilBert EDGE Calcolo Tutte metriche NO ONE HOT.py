@@ -1,4 +1,3 @@
-# Importa i moduli necessari
 import pandas as pd
 import tensorflow as tf
 from datasets import load_dataset, Dataset, DatasetDict
