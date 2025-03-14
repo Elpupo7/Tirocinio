@@ -137,7 +137,7 @@ lr_scheduler = tf.keras.optimizers.schedules.ExponentialDecay(
 optimizer = tf.keras.optimizers.Adam(learning_rate=lr_scheduler)
 loss = tf.keras.losses.CategoricalCrossentropy(from_logits=True)
 
-# Metrica FScore (chiesta a chatgpt)
+# Metrica F1Score (chiesta a chatgpt)
 class F1Score(tf.keras.metrics.Metric):
     def __init__(self, name="f1_score", **kwargs):
         super(F1Score, self).__init__(name=name, **kwargs)
