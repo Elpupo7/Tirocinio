@@ -76,7 +76,7 @@ def combine_features(example):
     return example
   
 dataset = dataset["train"].map(combine_features)
-# Dividi in train e test (80%-20%)
+# Train e test (80%-20%)
 dataset = dataset.train_test_split(test_size=0.2, seed=42)
 
 from collections import Counter
