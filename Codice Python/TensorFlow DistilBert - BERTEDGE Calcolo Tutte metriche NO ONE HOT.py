@@ -2,6 +2,7 @@ import pandas as pd
 import tensorflow as tf
 from datasets import load_dataset, Dataset, DatasetDict
 from transformers import DistilBertTokenizer, TFDistilBertForSequenceClassification
+from transformers import BertTokenizer, TFBertForSequenceClassification # Per il modello BERT
 
 df = pd.read_csv("preprocessed_DNN.csv", delimiter=",")
 
@@ -65,6 +66,7 @@ print(Counter(dataset["test"]["label"]))
 
 # Tokenizzazione
 tokenizer = DistilBertTokenizer.from_pretrained("distilbert-base-uncased")
+#tokenizer = BertTokenizer.from_pretrained("bert-base-uncased") # Quando usi il modello BERT
 
 def tokenize_function(examples):
     return tokenizer(examples["text"], padding="max_length", truncation=True, max_length=500)
@@ -74,7 +76,7 @@ tokenized_datasets = dataset.map(tokenize_function, batched=True)
 
 # Conversione in tf.data.Dataset 
 batch_n = 20
-
+#batch_n = 10 # Quando usi il modello BERT
 train_dataset = tokenized_datasets["train"].to_tf_dataset(
     columns=["input_ids", "attention_mask"],
     label_cols=["label"],  # Usa la colonna "label" (numerica) creata in precedenza
@@ -88,6 +90,14 @@ test_dataset = tokenized_datasets["test"].to_tf_dataset(
     shuffle=True, 
     batch_size=batch_n, 
 )
+
+# Uso del modello BERT
+#model = TFBertForSequenceClassification.from_pretrained(
+#    "bert-base-uncased",
+#    num_labels=len(attack_types),
+#    id2label=id2label,
+#    label2id=label2id
+#)
 
 model = TFDistilBertForSequenceClassification.from_pretrained(
     "distilbert-base-uncased",
@@ -195,10 +205,7 @@ import tensorflow as tf
 from transformers import DistilBertTokenizer
 import pandas as pd
 
-# Carica il tokenizer usato per l'addestramento
-tokenizer = DistilBertTokenizer.from_pretrained("distilbert-base-uncased")
 
-# Definisci la funzione predict_attack (che ora usa direttamente la Series)
 def predict_attack(model, sample_row, id2label):
     
     sample_text = combine_features(sample_row)["text"]
