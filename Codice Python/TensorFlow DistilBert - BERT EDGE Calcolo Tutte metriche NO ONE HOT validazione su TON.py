@@ -2,6 +2,7 @@ import pandas as pd
 import tensorflow as tf
 from datasets import load_dataset, Dataset, DatasetDict
 from transformers import DistilBertTokenizer, TFDistilBertForSequenceClassification
+from transformers import BertTokenizer, TFBertForSequenceClassification # Per il modello BERT
 
 df = pd.read_csv("windows10_dataset.csv")
 df = df.rename(columns={'label': 'Attack_label'})
@@ -82,6 +83,8 @@ print(Counter(dataset["test"]["label"]))
 
 
 # Tokenizzazione
+#tokenizer = BertTokenizer.from_pretrained("bert-base-uncased") # Quando uso il modello Bert 
+
 tokenizer = DistilBertTokenizer.from_pretrained("distilbert-base-uncased")
 
 def tokenize_function(examples):
@@ -89,12 +92,13 @@ def tokenize_function(examples):
 
 tokenized_datasets = dataset.map(tokenize_function, batched=True)
 
-
+batchN = 20
+batchN = 10 # Quando usi Bert
 test_dataset = tokenized_datasets["test"].to_tf_dataset(
     columns=["input_ids", "attention_mask"],
     label_cols=["label"],
     shuffle=True,
-    batch_size=20,
+    batch_size=batchN,
 )
 
 # Metriche Recall, Precision, F1 score (chiesto a chatgpt) usando Macro-Average, per dare lo stesso peso ad ogni classe 
@@ -167,8 +171,18 @@ class MacroF1Score(tf.keras.metrics.Metric):
         self.precision_metric.reset_state()
         self.recall_metric.reset_state()
 
-model_path = "/content/drive/My Drive/tensorFlow_model_checkpointEDGE_Distill_1000ES_NO_ONE_HOT_2/tf_model.h5"
+model_path = "/content/drive/My Drive/tensorFlow_model_checkpointEDGE_Distill_1000ES_NO_ONE_HOT/tf_model.h5"
 
+# Usa il modello Bert per l'addestramento
+#model = TFBertForSequenceClassification.from_pretrained(
+#    "bert-base-uncased",
+#    num_labels=len(attack_types),
+#    id2label=id2label,
+#    label2id=label2id
+#)
+
+
+# Usa il modello DistilBert per l'addestramento
 model = TFDistilBertForSequenceClassification.from_pretrained(
     "distilbert-base-uncased",
     num_labels=len(attack_types),
