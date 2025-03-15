@@ -206,7 +206,47 @@ model.compile(
 model.fit(train_dataset, validation_data=test_dataset, epochs=3)
 
 
+# Prova del modello
 
+import tensorflow as tf
+from transformers import DistilBertTokenizer
+import pandas as pd
+
+# Carica il tokenizer usato per l'addestramento
+tokenizer = DistilBertTokenizer.from_pretrained("distilbert-base-uncased")
+
+# Definisci la funzione predict_attack (che ora usa direttamente la Series)
+def predict_attack(model, sample_row, id2label):
+    
+    sample_text = combine_features(sample_row)["text"]
+
+    inputs = tokenizer(sample_text, padding="max_length", truncation=True, max_length=500, return_tensors="tf")
+
+    # Predizione
+    outputs = model(inputs["input_ids"], attention_mask=inputs["attention_mask"])
+    logits = outputs.logits
+    predicted_class = tf.argmax(logits, axis=1).numpy()[0]
+
+    # Mappa il numero alla sua etichetta testuale utilizzando id2label
+    predicted_label = id2label[predicted_class]
+
+    return predicted_label
+
+
+
+attack_type = 'MITM'
+attack_df = df[df["type"] == attack_type]
+attack_df_limited = attack_df.sample(n=15)
+print(len(attack_df))
+print(type(attack_df))
+print(attack_df["type"].value_counts())
+for index, row in attack_df_limited.iterrows():
+    if row['type'] == attack_type:
+      predicted_label = predict_attack(model, row, id2label)
+      print("Attack_label:", row['Attack_label'])
+      print("type:", row['type'])
+      print("Predicted label:", predicted_label)
+      print('index: ', index,'\n')
 
 
 
