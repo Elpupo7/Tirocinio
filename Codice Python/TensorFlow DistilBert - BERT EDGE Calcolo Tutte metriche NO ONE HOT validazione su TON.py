@@ -170,8 +170,11 @@ class MacroF1Score(tf.keras.metrics.Metric):
     def reset_state(self):
         self.precision_metric.reset_state()
         self.recall_metric.reset_state()
-
+        
+# PER IL MODELLO TENSTOFLOW DI EDGE DistilBert
 model_path = "/content/drive/My Drive/tensorFlow_model_checkpointEDGE_Distill_1000ES_NO_ONE_HOT/tf_model.h5"
+# PER IL MODELLO TENSTOFLOW DI EDGE Bert
+#model_path = "/content/drive/My Drive/tensorFlow_model_checkpointEDGE_BERT_1000ES_NO_ONE_HOT_Tutte_le_metriche/tf_model.h5"
 
 # Usa il modello Bert per l'addestramento
 #model = TFBertForSequenceClassification.from_pretrained(
