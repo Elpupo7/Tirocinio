@@ -287,6 +287,14 @@ def metrics1(labels, pred, class_splits):
         start = end  # Aggiorna "start" per la prossima iterazione
 
 
+# Validazione sul test set 
+results = model.evaluate(test_dataset)
+print(f"Loss: {results[0]}")
+print(f"Accuracy: {results[1]}")
+print(f"Precision: {results[2]}")
+print(f"Recall: {results[3]}")
+print(f"F1-Score: {results[4]}")
+
 y_trues, y_preds = [], []
 
 for batch in test_dataset:
