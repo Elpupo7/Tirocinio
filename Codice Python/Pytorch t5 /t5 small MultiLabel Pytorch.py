@@ -320,9 +320,9 @@ def calculate_per_class_metrics(true_label, pred_label):
 
 
 
-print("Per-class metrics for Attack_present: (val set)")
+print("Per-class metrics for Attack_present: (test set) ")
 calculate_per_class_metrics(all_test_true_att_present, all_test_pred_att_present)
-print("\nPer-class metrics for Attack_type:")
+print("\nPer-class metrics for Attack_type: (test set) ")
 calculate_per_class_metrics(all_test_true_att_type, all_test_pred_att_type)
 
 
@@ -334,11 +334,11 @@ def metrics2(labels, pred, class_name):
         print(f"Group {class_name} | Precision: {precision:.4f}, Recall: {recall:.4f}, F1: {f1:.4f}\n")
 
 
-print("Per-class metrics for Attack_present: (test set)")
+print("Per-class metrics for Attack_present: (test set) ")
 label_name="Attack_present"
 metrics2(all_test_true_att_present, all_test_pred_att_present,label_name)
 label_name2="Attack_type"
-print("\nPer-class metrics for Attack_type: (test set")
+print("\nPer-class metrics for Attack_type: (test set) ")
 metrics2(all_test_true_att_type, all_test_pred_att_type, label_name2,)
 
 
