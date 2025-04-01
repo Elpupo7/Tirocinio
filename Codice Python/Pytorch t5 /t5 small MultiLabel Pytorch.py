@@ -320,11 +320,26 @@ def calculate_per_class_metrics(true_label, pred_label):
 
 
 
-print("Per-class metrics for Attack_present: (test set)")
-attack_present_metrics = calculate_per_class_metrics1(all_val_true_att_present, all_val_pred_att_present)
+print("Per-class metrics for Attack_present: (val set)")
+calculate_per_class_metrics(all_test_true_att_present, all_test_pred_att_present)
+print("\nPer-class metrics for Attack_type:")
+calculate_per_class_metrics(all_test_true_att_type, all_test_pred_att_type)
 
-print("\nPer-class metrics for Attack_type: (test set )")
-attack_type_metrics = calculate_per_class_metrics1(all_val_ture_att_type, all_val_pred_att_type)
+
+def metrics2(labels, pred, class_name):
+        precision, recall, f1, _ = precision_recall_fscore_support(
+            labels, pred, average="macro", zero_division=0
+        )
+
+        print(f"Group {class_name} | Precision: {precision:.4f}, Recall: {recall:.4f}, F1: {f1:.4f}\n")
+
+
+print("Per-class metrics for Attack_present: (test set)")
+label_name="Attack_present"
+metrics2(all_test_true_att_present, all_test_pred_att_present,label_name)
+label_name2="Attack_type"
+print("\nPer-class metrics for Attack_type: (test set")
+metrics2(all_test_true_att_type, all_test_pred_att_type, label_name2,)
 
 
 
