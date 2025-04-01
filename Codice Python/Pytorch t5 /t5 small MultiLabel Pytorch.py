@@ -273,7 +273,7 @@ def test_model(test_dataloader):
     print(f"Accuracy: {accuracy_attack_present:.4f} | Precision: {precision_attack_present:.4f} | Recall: {recall_attack_present:.4f} | F1 Score: {f1_attack_present:.4f}")
 
     # Restituisci all_preds e all_labels per l'uso successivo
-    return total_loss / len(train_dataloader), accuracy_attack_type, accuracy_attack_present, all_attack_types_pred, all_attack_types_true, all_attack_present_pred, all_attack_present_true
+    return total_loss / len(test_dataloader), accuracy_attack_type, accuracy_attack_present, all_attack_types_pred, all_attack_types_true, all_attack_present_pred, all_attack_present_true
 
 
 train_loss_history = []
