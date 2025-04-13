@@ -222,6 +222,15 @@ for epoch in range(EPOCHS):
 
   print(f"Epoch {epoch + 1}/{EPOCHS} | Train Loss: {train_loss:.4f} | Train Accuracy: {acc_train:.2f}% | Validation Loss: {val_loss:.4f} | Validation Accuracy: {val_accuracy:.2f}%")
 
+plt.figure(figsize=(10, 5))
+plt.plot(train_loss_history, label="Train Loss")
+plt.plot(val_loss_history, label="Validation Loss")
+plt.xlabel("Epochs")
+plt.ylabel("Loss")
+plt.title("Loss Over Epochs")
+plt.legend()
+plt.grid(alpha=0.3)
+plt.show()
 
 # Test set 
 print("\n[+] Evaluating on the test set...")
