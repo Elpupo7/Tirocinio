@@ -8,9 +8,6 @@ from sklearn.metrics import precision_recall_fscore_support
 from tqdm import tqdm
 
 
-#file_path = "/content/drive/MyDrive/PreprocPROVA/EdgeIoT_250_rows.csv" # Per usare EDGE
-#file_path = "/content/drive/MyDrive/PreprocPROVA/TON_350_rows.csv" # Per Validare su TON
-
 LABEL_COLUMNS = ["Attack_type", "Attack_label"]
 MAX_LENGTH = 128
 batch_size = 32
