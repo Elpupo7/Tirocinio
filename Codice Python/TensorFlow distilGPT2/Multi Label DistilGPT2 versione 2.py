@@ -11,7 +11,7 @@ from tqdm import tqdm
 LABEL_COLUMNS = ["Attack_type", "Attack_label"]
 MAX_LENGTH = 128
 batch_size = 32
-DATASET = 'EdgeIoT_250_rows.csv"' # Per usare EDGE
+DATASET = 'EdgeIoT_250_rows.csv' # Per usare EDGE
 DATASET = 'TON_350_rows.csv' # Per Validare su TON
 EPOCHS = 7
 
