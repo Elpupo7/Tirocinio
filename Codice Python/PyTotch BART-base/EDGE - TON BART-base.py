@@ -307,7 +307,7 @@ def metrics_edge(labels, pred, class_splits):
 
 # Metrica per TON
 
-def metrics_ton(labels, pred, class_splits):  #CORRETTA
+def metrics_ton(labels, pred, class_splits):
     preds_binary = (pred > 0.5).astype(int)
 
     start = 0
