@@ -116,7 +116,6 @@ model.to(DEVICE)
 
 
 
-#NUOVA CLASSE ATTACKDATASET
 class AttackDataset(Dataset):
     def __init__(self, texts, labels, tokenizer, max_length, num_classes, label_encoders, label_columns):
         self.texts = texts
