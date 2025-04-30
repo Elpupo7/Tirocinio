@@ -14,7 +14,9 @@ DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 DATASET = 'EdgeIoT_250_rows.csv' # PER DATASET EDGE 
 # DATASET = 'TON_350_rows.csv' # PER DATASET TON
 LABEL_COLUMNS = ["Attack_type","Attack_label"]
-EPOCHS = 5
+EPOCHS = 5 # Per addestarre il modello su EDGE
+#EPOCHS = 35 # Per addestarre i LoRA
+#EPOCHS = 1 # Per adattare la testa di classifficazione
 BATCH_SIZE = 32
 MAX_LENGTH = 128
 MODEL_NAME = "facebook/bart-base"
@@ -100,16 +102,42 @@ model = BartForSequenceClassification.from_pretrained(
 
 model.to(DEVICE)
 
+# LoRA per TON, target modules relativi a "q_proj", "v_proj", "k_proj"
+target_modules = []
+for i in range(12):  # layer di BART-base
+    # Encoder self-attn
+    target_modules += [
+        f"model.encoder.layers.{i}.self_attn.q_proj",
+        f"model.encoder.layers.{i}.self_attn.k_proj",
+        f"model.encoder.layers.{i}.self_attn.v_proj",
+        f"model.encoder.layers.{i}.self_attn.out_proj",
+        # MLP
+        f"model.encoder.layers.{i}.fc1",
+        f"model.encoder.layers.{i}.fc2",
+    ]
+    # Decoder self-attn
+    target_modules += [
+        f"model.decoder.layers.{i}.self_attn.q_proj",
+        f"model.decoder.layers.{i}.self_attn.k_proj",
+        f"model.decoder.layers.{i}.self_attn.v_proj",
+        f"model.decoder.layers.{i}.self_attn.out_proj",
+        f"model.decoder.layers.{i}.encoder_attn.q_proj",
+        f"model.decoder.layers.{i}.encoder_attn.k_proj",
+        f"model.decoder.layers.{i}.encoder_attn.v_proj",
+        f"model.decoder.layers.{i}.encoder_attn.out_proj",
+
+    ]
 
 # LoRA per TON
 #lora_config = LoraConfig(
-    #r=16,                      
-    #lora_alpha=32,              
-    #target_modules=["q_proj", "v_proj", "k_proj", "out_proj"],
-    #lora_dropout=0.1,            
-    #bias="none",                 
-    #task_type="SEQ_CLS"           
+    #r=32,
+    #lora_alpha=64,
+    #target_modules=target_modules,
+    #lora_dropout=0.1,
+    #bias="none",
+    #task_type="SEQ_CLS",
 #)
+
 
 #model = get_peft_model(model, lora_config)
 #model.to(DEVICE)
@@ -175,8 +203,19 @@ test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=True)
 optimizer = AdamW(model.parameters(), lr=2e-5)
 criterion = torch.nn.BCEWithLogitsLoss()
 
-#Quando uso i LoRA
+# Quando uso i LoRA
 #optimizer = AdamW(model.parameters(), lr=1e-4)
+#criterion = torch.nn.BCEWithLogitsLoss()
+
+# Quando faccio la cross validation devo adattare la testa di classifficazione di BART al nuovo dataset, quindi va adattata la testa di classifficazione
+#for name, p in model.named_parameters():
+    #if "classification_head" in name:
+        #print(f"Unfreezing: {name}")
+        #p.requires_grad = True
+    #else:
+        #p.requires_grad = False
+
+#optimizer = AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=2e-5)
 #criterion = torch.nn.BCEWithLogitsLoss()
 
 
