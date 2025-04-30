@@ -207,7 +207,7 @@ criterion = torch.nn.BCEWithLogitsLoss()
 #optimizer = AdamW(model.parameters(), lr=1e-4)
 #criterion = torch.nn.BCEWithLogitsLoss()
 
-# Quando faccio la cross validation devo adattare la testa di classifficazione di BART al nuovo dataset, quindi va adattata la testa di classifficazione
+# Quando faccio la cross validation devo adattare la testa di classifficazione di BART al nuovo dataset, quindi con questo codice addatto solo i parametri della testa di classifficazione
 #for name, p in model.named_parameters():
     #if "classification_head" in name:
         #print(f"Unfreezing: {name}")
