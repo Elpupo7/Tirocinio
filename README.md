@@ -1,6 +1,7 @@
 EDGE IIoT: https://ieee-dataport.org/documents/edge-iiotset-new-comprehensive-realistic-cyber-security-dataset-iot-and-iiot-applications  
 
-TON: https://ieee-dataport.org/documents/toniot-datasets#files per il download: https://research.unsw.edu.au/projects/toniot-datasets  
+TON: https://ieee-dataport.org/documents/toniot-datasets#files  
+per il download (di TON): https://research.unsw.edu.au/projects/toniot-datasets  
 
 Encoder-only  
 DistilBERT: https://huggingface.co/docs/transformers/model_doc/distilbert
