@@ -47,6 +47,24 @@ df1["text"] = df1.apply(lambda row: " ".join([str(row[col]) for col in df1.colum
 
 print(df1["multilabel_target"].value_counts())
 
+#MULTILABEL TON
+#from google.colab import drive
+#import pickle
+
+#load_path = "/content/drive/My Drive/label_encoders/label_encoders.pkl"
+
+#with open(load_path, "rb") as f:
+    #label_encoders = pickle.load(f)
+
+#df1["Attack_type_encoded"] = label_encoders["Attack_type"].transform(df1["Attack_type"])
+#df1["Attack_label_encoded"] = label_encoders["Attack_label"].transform(df1["Attack_label"])
+
+#df1["multilabel_target"] = df1.apply(lambda row: [row["Attack_type_encoded"], row["Attack_label_encoded"]], axis=1)
+
+#df1["text"] = df1.apply(lambda row: " ".join([str(row[col]) for col in df1.columns if col not in LABEL_COLUMNS + ["multilabel_target"]]), axis=1)
+
+#print(df1["multilabel_target"].value_counts())
+
 num_attack_type = len(label_encoders["Attack_type"].classes_)
 num_attack_label = len(label_encoders["Attack_label"].classes_)
 num_classes_split = [num_attack_type, num_attack_label]
