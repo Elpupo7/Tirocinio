@@ -24,6 +24,61 @@ print(f"[+] Loading dataset {DATASET}...")
 df1 = pd.read_csv(DATASET, delimiter=",")
 
 
+label_encoders = {}
+for col in LABEL_COLUMNS:
+    label_encoders[col] = LabelEncoder()
+    df1[col] = label_encoders[col].fit_transform(df1[col])
+
+# Combine encoded label columns into a list of indices for each sample
+df1["multilabel_target"] = df1.apply(lambda row: [row[col] for col in LABEL_COLUMNS], axis=1)
+
+# Concatenate relevant feature columns into a single 'text' column for input to the model
+df1["text"] = df1.apply(lambda row: " ".join([str(row[col]) for col in df1.columns if col not in LABEL_COLUMNS + ["multilabel_target"]]), axis=1)
+
+print(df1["multilabel_target"].value_counts())
+
+#MULTILABEL TON
+#from google.colab import drive
+#import pickle
+
+#load_path = "/content/drive/My Drive/label_encoders/label_encoders.pkl"
+
+#with open(load_path, "rb") as f:
+    #label_encoders = pickle.load(f)
+
+#df1["Attack_type_encoded"] = label_encoders["Attack_type"].transform(df1["Attack_type"])
+#df1["Attack_label_encoded"] = label_encoders["Attack_label"].transform(df1["Attack_label"])
+
+#df1["multilabel_target"] = df1.apply(lambda row: [row["Attack_type_encoded"], row["Attack_label_encoded"]], axis=1)
+
+#df1["text"] = df1.apply(lambda row: " ".join([str(row[col]) for col in df1.columns if col not in LABEL_COLUMNS + ["multilabel_target"]]), axis=1)
+
+#print(df1["multilabel_target"].value_counts())
+
+
+classi = [] # Usato per il calcolo dell emetriche precision recall f1 per ogni tipo in Attack Label e Attack Type
+for col, encoder in label_encoders.items():
+    print(f"\n{col} - Classi encodate:")
+    for i, label in enumerate(encoder.classes_):
+        print(f"{label} -> {i}")
+        classi.append(label)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
