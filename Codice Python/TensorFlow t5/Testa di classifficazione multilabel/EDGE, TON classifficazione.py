@@ -285,26 +285,81 @@ plt.grid(alpha=0.3)
 plt.show()
 
 
-test_loss, test_accuracy, all_preds_test, all_labels_test = evaluate_model(test_dataset)
+def metrics(labels, pred):
+    preds_binary = (pred > 0.5).astype(int)
+    precision, recall, f1, _ = precision_recall_fscore_support(labels, preds_binary, average=None)
+    for i, class_name in enumerate(classi):
+        print(f"Class {class_name} | Precision: {precision[i]:.4f}, Recall: {recall[i]:.4f}, F1: {f1[i]:.4f}\n")
+
+# PER EDGE
+# Calcola la recall precision f1 macro per i tipi Attack Type e Attack Label
+def metrics1(labels, pred, class_splits):
+    preds_binary = (pred > 0.5).astype(int)
+
+    start = 0
+    for i, class_name in enumerate(LABEL_COLUMNS):
+        n_classes = class_splits[i]  # Numero di classi nel gruppo
+        end = start + n_classes
+
+        # Estrai solo le classi corrispondenti
+        labels_group = labels[:, start:end]
+        preds_group = preds_binary[:, start:end]
+
+        # Calcola le metriche con average='macro'
+        precision, recall, f1, _ = precision_recall_fscore_support(
+            labels_group, preds_group, average="macro", zero_division=0
+        )
+
+        print(f"Group {class_name} | Precision: {precision:.4f}, Recall: {recall:.4f}, F1: {f1:.4f}\n")
+        start = end  # Aggiorna "start" per la prossima iterazione
+
+# PER TON
+#CONSENTE DI PRENDERE E CALCOLARE LE MACRO METRICHE SOLO SUGLI EFFETTIVI ATTACK TYPE PRESENTI DENTRO AL DATASET TON
+#def metrics1(labels, pred, class_splits):
+    #preds_binary = (pred > 0.5).astype(int)
+
+    #start = 0
+    #for i, class_name in enumerate(LABEL_COLUMNS):
+        #n_classes = class_splits[i]  # Numero di classi nel gruppo corrente
+        #end = start + n_classes
+
+        # Estrai le colonne per il gruppo corrente
+        #labels_group = labels[:, start:end]
+        #preds_group = preds_binary[:, start:end]
+
+        # Se il gruppo corrente è "Attack_type", seleziona solo le classi presenti in Dataset 2
+        #if class_name == "Attack_type":
+            # Indici relativi all'interno del gruppo "Attack_type" di Dataset 1 per le classi di Dataset 2:
+            #selected_indices = [3, 4, 6, 7, 8, 9, 11, 14]
+            #labels_group = labels_group[:, selected_indices]
+            #preds_group = preds_group[:, selected_indices]
 
 
-ordered_ids = sorted(id_to_label.keys(), key=int)
+        # Calcola le metriche per il gruppo corrente
+        #precision, recall, f1, _ = precision_recall_fscore_support(
+            #labels_group, preds_group, average="macro", zero_division=0
+        #)
 
-# Metriche per Attack type
-precision, recall, f1, _ = precision_recall_fscore_support(
-    all_labels_test,
-    all_preds_test,
-    labels=ordered_ids,
-    average=None
-)
+        #print(f"Group {class_name} | Precision: {precision:.4f}, Recall: {recall:.4f}, F1: {f1:.4f}\n")
+        #start = end  # Aggiorna "start" per il prossimo gruppo
 
-for idx, id_str in enumerate(ordered_ids):
-    attack_name = id_to_label[id_str]
-    print(f"Tipo di attacco: {attack_name}")
-    print(f"  Precision: {precision[idx]:.4f}")
-    print(f"  Recall:    {recall[idx]:.4f}")
-    print(f"  F1-score:  {f1[idx]:.4f}")
-    print("-----------------------------")
+y_trues, y_preds = [], []
+
+for batch in test_dataset:
+    inputs, labels = batch
+    preds = model.predict(inputs, verbose=0)
+    y_trues.append(labels.numpy())
+    y_preds.append(tf.sigmoid(preds.logits).numpy())
+
+# Concatena tutti i batch
+y_true = np.concatenate(y_trues, axis=0)
+y_pred = np.concatenate(y_preds, axis=0)
+
+
+print('Metriche per ogni classe')
+metrics(y_true, y_pred)
+print('\nMacro:')
+metrics1(y_true, y_pred, num_classes_split)
 
 
 
