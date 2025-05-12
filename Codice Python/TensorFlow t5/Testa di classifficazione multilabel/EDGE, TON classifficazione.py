@@ -16,7 +16,7 @@ LABEL_COLUMNS = ["Attack_type","Attack_label"]  # List of target columns
 EPOCHS = 3
 batch_size = 32
 MAX_LENGTH = 128
-MODEL_NAME = 'google/t5-efficient-tiny'  # Use a valid T5 model
+MODEL_NAME = 'google/t5-efficient-tiny'
 OUTPUT_MODEL = f'models/t5_trained.pth'
 
 # Load dataset
