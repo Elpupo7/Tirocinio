@@ -204,7 +204,7 @@ def calculate_accuracy(labels, preds, threshold=THRESHOLD):
     return (labels == preds_binary).mean() * 100
 
 
-def traning_loop(model, train_dataset):
+def train_model(model, train_dataset):
     total_loss = 0.0
     all_labels = []
     all_preds  = []
@@ -235,7 +235,7 @@ def traning_loop(model, train_dataset):
           f"Acc: {accuracy:.2f}%  Prec: {precision:.4f}  Rec: {recall:.4f}  F1: {f1:.4f}")
     return total_loss/len(train_dataset)
 
-def evaluate_loop(model, val_dataset):
+def evaluate_model(model, val_dataset):
     total_loss = 0.0
     all_labels = []
     all_preds  = []
@@ -263,10 +263,15 @@ def evaluate_loop(model, val_dataset):
           f"Acc: {accuracy:.2f}%  Prec: {precision:.4f}  Rec: {recall:.4f}  F1: {f1:.4f}")
     return total_loss/len(val_dataset)
 
+
+
+train_loss_history = []
+val_loss_history = []
+
 for epoch in range(EPOCHS):
     print(f"\n=== Epoch {epoch+1}/{EPOCHS} ===")
-    train_loss = traning_loop(model, train_dataset)
-    val_loss   = evaluate_loop(model, val_dataset)
+    train_loss = train_model(model, train_dataset)
+    val_loss   = evaluate_model(model, val_dataset)
 
 
 
