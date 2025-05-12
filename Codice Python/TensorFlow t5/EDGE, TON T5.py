@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 # Configuration
 #DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-DATASET = 'EdgeIoT_250_rows.csv"
+DATASET = 'EdgeIoT_250_rows.csv'
 #DATASET = 'TON_350_rows.csv' # Per Ton 
 TARGET_COLUMNS = ["Attack_type","Attack_label"]  # List of target columns
 EPOCHS = 80
