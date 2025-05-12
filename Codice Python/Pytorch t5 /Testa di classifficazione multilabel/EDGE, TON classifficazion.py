@@ -22,7 +22,7 @@ LABEL_COLUMNS = ["Attack_type", "Attack_label"]
 EPOCHS = 2
 BATCH_SIZE = 32
 MAX_LENGTH = 128
-MODEL_NAME = 'google/t5-efficient-tiny'  # Use a valid T5 model
+MODEL_NAME = 'google/t5-efficient-tiny'
 OUTPUT_MODEL = f'models/t5_trained.pth'
 tokenizer = T5Tokenizer.from_pretrained(MODEL_NAME, legacy=False)
 
