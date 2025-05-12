@@ -285,7 +285,26 @@ plt.grid(alpha=0.3)
 plt.show()
 
 
+test_loss, test_accuracy, all_preds_test, all_labels_test = evaluate_model(test_dataset)
 
+
+ordered_ids = sorted(id_to_label.keys(), key=int)
+
+# Metriche per Attack type
+precision, recall, f1, _ = precision_recall_fscore_support(
+    all_labels_test,
+    all_preds_test,
+    labels=ordered_ids,
+    average=None
+)
+
+for idx, id_str in enumerate(ordered_ids):
+    attack_name = id_to_label[id_str]
+    print(f"Tipo di attacco: {attack_name}")
+    print(f"  Precision: {precision[idx]:.4f}")
+    print(f"  Recall:    {recall[idx]:.4f}")
+    print(f"  F1-score:  {f1[idx]:.4f}")
+    print("-----------------------------")
 
 
 
