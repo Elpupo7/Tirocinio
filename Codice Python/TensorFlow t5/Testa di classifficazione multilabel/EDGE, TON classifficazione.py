@@ -274,7 +274,15 @@ for epoch in range(EPOCHS):
     val_loss   = evaluate_model(model, val_dataset)
 
 
-
+plt.figure(figsize=(10, 5))
+plt.plot(train_loss_history, label="Train Loss")
+plt.plot(val_loss_history, label="Validation Loss")
+plt.xlabel("Epochs")
+plt.ylabel("Loss")
+plt.title("Loss Over Epochs")
+plt.legend()
+plt.grid(alpha=0.3)
+plt.show()
 
 
 
