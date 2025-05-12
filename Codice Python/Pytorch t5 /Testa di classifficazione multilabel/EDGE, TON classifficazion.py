@@ -72,6 +72,19 @@ print(df1["multilabel_target"].value_counts())
 
 #print(df1["multilabel_target"].value_counts())
 
+num_attack_type = len(label_encoders["Attack_type"].classes_)
+num_attack_label = len(label_encoders["Attack_label"].classes_)
+num_classes_split = [num_attack_type, num_attack_label]
+
+classi = []
+for col, encoder in label_encoders.items():
+    print(f"\n{col} - Classi encodate:")
+    for i, label in enumerate(encoder.classes_):
+        print(f"{label} -> {i}")
+        classi.append(label)
+
+num_classes = sum(len(label_encoders[col].classes_) for col in LABEL_COLUMNS)
+print(f"[INFO] Number of total classes: {num_classes}")
 
 class T5ForMultiLabelClassification(nn.Module):
     def __init__(self, model_name: str, num_labels: int):
