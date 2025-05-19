@@ -108,8 +108,8 @@ class DistilBertDualHead(DistilBertPreTrainedModel):
         super().__init__(config)
         self.distilbert        = DistilBertModel(config)
         self.dropout           = nn.Dropout(config.seq_classif_dropout)
-        self.binary_classifier = nn.Linear(config.hidden_size, 1)
-        self.multi_classifier  = nn.Linear(config.hidden_size, num_attack_types)
+        self.binary_classifier = nn.Linear(config.hidden_size, 1) # restituisce 1 logits per la classifficazione binaria
+        self.multi_classifier  = nn.Linear(config.hidden_size, num_attack_types) # restituisce un logit per ogni tipo di attacco
         self.init_weights()
 
     def forward(
@@ -131,12 +131,14 @@ class DistilBertDualHead(DistilBertPreTrainedModel):
             **kwargs
         )
 
-        # Pool sul token [CLS]
+        # Pool sul token [CLS] che riassume l’informazione di tutta la frase.
         pooled = bert_outputs.last_hidden_state[:, 0]
         pooled = self.dropout(pooled)
 
         logits_bin   = self.binary_classifier(pooled).squeeze(-1)
         logits_multi = self.multi_classifier(pooled)
+
+        # Calcoliamo la loss
 
         loss = None
         if label_bin is not None and label_multi is not None:
@@ -149,11 +151,276 @@ class DistilBertDualHead(DistilBertPreTrainedModel):
         return {"loss": loss, "logits_bin": logits_bin, "logits_multi": logits_multi}
 
 
+num_attack_types = len(label_encoders["Attack_type"].classes_)
+
+
+# Config LoRa 
+#lora_config = LoraConfig(
+    #r=16,
+    #lora_alpha=32,
+    #target_modules=["q_lin", "v_lin", "k_lin"],
+    #lora_dropout=0.1,
+    #bias="none",
+    #task_type="SEQ_CLS"
+#)
+
+config = DistilBertConfig.from_pretrained(MODEL_NAME)
+model  = DistilBertDualHead.from_pretrained(
+    MODEL_NAME,
+    config=config,
+    num_attack_types=num_attack_types
+)
+# Solo quando addestri i LoRa esegui la prossima istruzione 
+#model = get_peft_model(model, lora_config) 
+model.to(device)
+
+optimizer = AdamW(model.parameters(), lr=1e-4)
+def train_model(train_loader, model, optimizer, device):
+    """
+    Esegue un'epoca di training.
+    Ritorna:
+      - avg_loss: perdita media su tutti i batch
+      - metrics: dizionario con le metriche per task ('binary' e 'multi')
+    """
+    model.train()
+    total_loss = 0
+
+
+    for batch in tqdm(train_loader):
+        optimizer.zero_grad()
+        out = model(
+            input_ids=batch["input_ids"].to(device),
+            attention_mask=batch["attention_mask"].to(device),
+            label_bin=batch["label_bin"].to(device),
+            label_multi=batch["label_multi"].to(device),
+        )
+        loss = out["loss"]
+        loss.backward()
+        optimizer.step()
+        total_loss += loss.item()
+
+    # media loss
+    avg_loss = total_loss / len(train_loader)
+
+
+    return avg_loss
+
+
+def evaluate_model(eval_loader, model, device):
+    """
+    Esegue la validazione sul validation o test set.
+    Ritorna:
+      - avg_loss: perdita media
+      - metrics: dizionario con le metriche per task ('binary' e 'multi')
+    """
+    model.eval()
+    total_loss = 0
+
+    all_bin_labels, all_bin_preds   = [], []
+    all_multi_labels, all_multi_preds = [], []
+
+    with torch.no_grad():
+        for batch in tqdm(eval_loader):
+            out = model(
+                input_ids=batch["input_ids"].to(device),
+                attention_mask=batch["attention_mask"].to(device),
+                label_bin=batch["label_bin"].to(device),
+                label_multi=batch["label_multi"].to(device),
+            )
+            total_loss += out["loss"].item()
+
+            probs_b = torch.sigmoid(out["logits_bin"].cpu())
+            preds_b = (probs_b > 0.5).long()
+            all_bin_preds.append(preds_b)
+            all_bin_labels.append(batch["label_bin"].long())
+
+            logits_m = out["logits_multi"].cpu()
+            preds_m  = logits_m.argmax(dim=1)
+            all_multi_preds.append(preds_m)
+            all_multi_labels.append(batch["label_multi"])
+
+    avg_loss = total_loss / len(eval_loader)
+
+    # concateniamo tutti i batch
+    all_bin_preds    = torch.cat(all_bin_preds)
+    all_bin_labels   = torch.cat(all_bin_labels)
+    all_multi_preds  = torch.cat(all_multi_preds)
+    all_multi_labels = torch.cat(all_multi_labels)
+
+    # calcolo metriche
+    metrics = {
+        "binary": {
+            "accuracy":  accuracy_score(all_bin_labels, all_bin_preds),
+            "precision": precision_score(all_bin_labels, all_bin_preds),
+            "recall":    recall_score(all_bin_labels, all_bin_preds),
+            "f1":        f1_score(all_bin_labels, all_bin_preds)
+        },
+        "multi": {
+            "accuracy":  accuracy_score(all_multi_labels, all_multi_preds),
+            "precision": precision_score(all_multi_labels, all_multi_preds, average="weighted"),
+            "recall":    recall_score(all_multi_labels, all_multi_preds, average="weighted"),
+            "f1":        f1_score(all_multi_labels, all_multi_preds, average="weighted")
+        }
+    }
+
+    return avg_loss, metrics, all_bin_labels, all_bin_preds, all_multi_labels, all_multi_preds
+
+
+train_loss_history, val_loss_history = [], []
+
+for epoch in range(EPOCHS):
+    print(f"\nEpoch {epoch+1}/{EPOCHS}")
+
+    train_loss = train_model(train_loader, model, optimizer, device)
+    print(f"Train Loss: {train_loss:.4f}")
+    train_loss_history.append(train_loss)
+
+    val_loss, val_metrics, bin_labels, bin_preds, multi_labels, multi_preds  = evaluate_model(val_loader, model, device)
+
+    print(f"\nRis per tipo il riconoscimento binario | \n"
+    f"Val Loss: {val_loss:.4f} | \n"
+    f"Binary Accuracy: {val_metrics['binary']['accuracy']:.4f} | \n"
+    f"Binary Precision: {val_metrics['binary']['precision']:.4f} | \n"
+    f"Binary Recall: {val_metrics['binary']['recall']:.4f} | \n"
+    f"Binary F1: {val_metrics['binary']['f1']:.4f} | \n"
+    f"\nRis per tipo di attacco | \n"
+    f"Multi Accuracy: {val_metrics['multi']['accuracy']:.4f} | \n"
+    f"Multi Precision: {val_metrics['multi']['precision']:.4f} | \n"
+    f"Multi Recall: {val_metrics['multi']['recall']:.4f} | \n"
+    f"Multi F1: {val_metrics['multi']['f1']:.4f}"
+)
+    val_loss_history.append(val_loss)
+
+def metrics_per_task_EDGE(bin_labels, bin_preds, multi_labels, multi_preds, label_encoder_multi):
+    """
+    Stampa precision/recall/f1 per:
+      - task binario (presence vs absence), sia per-class che aggregato
+      - task multiclasse (tipo di attacco), sia per-class che aggregato
+    """
+    # Metriche Task Binario
+    print("Binary Task")
+
+    
+    prec_b_all, rec_b_all, f1_b_all, support_b = precision_recall_fscore_support(
+        bin_labels, bin_preds, average=None, zero_division=0
+    )
+
+    for i, label in enumerate(["Normale (0)", "Attacco (1)"]):
+        print(f"{label:12s} | P: {prec_b_all[i]:.4f} – R: {rec_b_all[i]:.4f} – F1: {f1_b_all[i]:.4f} – sup: {support_b[i]}")
+
+    # Media metriche per attacco
+    prec_b, rec_b, f1_b, _ = precision_recall_fscore_support(
+        bin_labels, bin_preds, average="macro", zero_division=0
+    )
+    print(f"\nMacro – Precision: {prec_b:.4f} – Recall: {rec_b:.4f} – F1: {f1_b:.4f}\n")
+
+    # Metriche Task per i tipi di attacchi
+    print("Multiclass Task")
+
+    prec_m, rec_m, f1_m, support_m = precision_recall_fscore_support(
+        multi_labels, multi_preds, average=None, zero_division=0
+    )
+    for i, class_name in enumerate(label_encoder_multi.classes_):
+        print(f"{class_name:15s} | P: {prec_m[i]:.4f} – R: {rec_m[i]:.4f} – F1: {f1_m[i]:.4f} – sup: {support_m[i]}\n")
+
+    # Macro-average
+    prec_macro, rec_macro, f1_macro, _ = precision_recall_fscore_support(
+        multi_labels, multi_preds, average="macro", zero_division=0
+    )
+    print(f"\nMacro – Precision: {prec_macro:.4f} – Recall: {rec_macro:.4f} – F1: {f1_macro:.4f}")
 
 
 
+def metrics_per_task_TON(bin_labels, bin_preds,
+                     multi_labels, multi_preds,
+                     label_encoder_multi):
+    """
+    Stampa precision/recall/F1 per tutte le classi
+    e calcola la macro‐media solo sulle classi con support > 0.
+    """
+
+    # Metriche Task Binario
+    print("Binary Task")
+
+    prec_b_all, rec_b_all, f1_b_all, support_b = precision_recall_fscore_support(
+        bin_labels, bin_preds, average=None, zero_division=0
+    )
+
+    for i, label in enumerate(["Normale (0)", "Attacco (1)"]):
+        print(f"{label:12s} | P: {prec_b_all[i]:.4f} – R: {rec_b_all[i]:.4f} – F1: {f1_b_all[i]:.4f} – sup: {support_b[i]}")
 
 
+    prec_b, rec_b, f1_b, _ = precision_recall_fscore_support(
+        bin_labels, bin_preds, average="weighted", zero_division=0
+    )
+    print(f"\nMacro – Precision: {prec_b:.4f} – Recall: {rec_b:.4f} – F1: {f1_b:.4f}\n")
+
+
+    # Metriche Task per i tipi di attacchi
+    print("Multiclass Task")
+    K = len(label_encoder_multi.classes_)
+
+    prec_m, rec_m, f1_m, support_m = precision_recall_fscore_support(
+        multi_labels, multi_preds,
+        labels=list(range(K)),
+        average=None,
+        zero_division=0
+    )
+
+    # 2) stampa per‐classe
+    for i, class_name in enumerate(label_encoder_multi.classes_):
+        print(f"{class_name:25s} | "
+              f"P: {prec_m[i]:.4f} – "
+              f"R: {rec_m[i]:.4f} – "
+              f"F1: {f1_m[i]:.4f} – "
+              f"sup: {support_m[i]}\n")
+    print()
+
+   # calcola macro‐media solo per gli atatcch ipresenti nel dataset TON
+    mask = support_m > 0 
+    prec_macro_present = np.mean(prec_m[mask])
+    rec_macro_present  = np.mean(rec_m[mask])
+    f1_macro_present   = np.mean(f1_m[mask])
+
+
+    print("Macro (solo classi con support>0): "
+          f"P: {prec_macro_present:.4f} – "
+          f"R: {rec_macro_present:.4f} – "
+          f"F1: {f1_macro_present:.4f}\n")
+
+
+# Validazione sul test set
+test_loss, test_metrics,  test_bin_labels, test_bin_preds, test_multi_labels, test_multi_preds  = evaluate_model(test_loader, model, device)
+
+print(f"\nRis per tipo il riconoscimento binario | \n"
+    f"Test Loss: {test_loss:.4f} | \n"
+    f"Binary Accuracy: {test_metrics['binary']['accuracy']:.4f} | \n"
+    f"Binary Precision: {test_metrics['binary']['precision']:.4f} | \n"
+    f"Binary Recall: {test_metrics['binary']['recall']:.4f} | \n"
+    f"Binary F1: {test_metrics['binary']['f1']:.4f} | \n"
+    f"\nRis per tipo di attacco | \n"
+    f"Multi Accuracy: {test_metrics['multi']['accuracy']:.4f} | \n"
+    f"Multi Precision: {test_metrics['multi']['precision']:.4f} | \n"
+    f"Multi Recall: {test_metrics['multi']['recall']:.4f} | \n"
+    f"Multi F1: {test_metrics['multi']['f1']:.4f}"
+)
+    #PER TON 11.35
+
+metrics_per_task_EDGE(
+    test_bin_labels.cpu().numpy(),
+    test_bin_preds.cpu().numpy(),
+    test_multi_labels.cpu().numpy(),
+    test_multi_preds.cpu().numpy(),
+    label_encoders["Attack_type"]
+)
+
+#metrics_per_task_TON(
+    #test_bin_labels.cpu().numpy(),
+    #test_bin_preds.cpu().numpy(),
+    #test_multi_labels.cpu().numpy(),
+    #test_multi_preds.cpu().numpy(),
+    #label_encoders["Attack_type"]
+#)
 
 
 
