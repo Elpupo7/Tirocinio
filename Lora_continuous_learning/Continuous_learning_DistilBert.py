@@ -1,0 +1,573 @@
+import pandas as pd
+import tensorflow as tf
+import itertools
+from datasets import load_dataset, Dataset, DatasetDict
+from transformers import DistilBertTokenizer, DistilBertForSequenceClassification
+from torch.utils.data import DataLoader, Dataset
+from tqdm import tqdm
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import LabelEncoder
+import numpy as np
+import torch
+import torch.nn as nn
+from torch.optim import AdamW
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import precision_recall_fscore_support
+from peft import LoraConfig, get_peft_model, PeftModel
+import pickle
+import os
+from collections import defaultdict
+from sklearn.metrics import precision_recall_fscore_support
+import copy
+from transformers import AutoModelForSequenceClassification
+from sklearn.metrics import accuracy_score
+
+
+class IncrementalMalwareDetector:
+    def __init__(self, base_model_path="distilbert-base-uncased", max_length=128):
+        self.tokenizer = DistilBertTokenizer.from_pretrained(base_model_path)
+        self.max_length = max_length
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        # Tracking
+        self.known_classes = set()
+        self.order_classes = []
+        self.class_to_round = {}
+        self.round_to_adapter = {}   # {round: {"path": ..., "head_path": ..., "num_labels": ...}}
+        self.current_round = 0
+
+        self.base_model = None
+        self.base_classes = []
+
+        # LoRA config
+        self.lora_config = LoraConfig(
+            r=16,
+            lora_alpha=32,
+            target_modules=["q_lin", "v_lin", "k_lin"],
+            lora_dropout=0.1,
+            bias="none",
+            task_type="SEQ_CLS"
+        )
+
+    def initialize_base_model(self, initial_classes, training_data):
+        # Round 0: train head
+        print(f"[Round {self.current_round}] Inizializzazione modello base con {len(initial_classes)} classi, le classi sono: {initial_classes}")
+
+        self.base_classes = initial_classes
+        self.known_classes.update(initial_classes)
+        self.order_classes.append(initial_classes)
+
+
+        self.base_model = DistilBertForSequenceClassification.from_pretrained(
+            "distilbert-base-uncased",
+            num_labels=len(initial_classes)
+        )
+
+        # train head (no LoRA here)
+        self._train_base_model(self.base_model, training_data, initial_classes)
+
+
+        round_dir = f"round_{self.current_round}"
+        os.makedirs(round_dir, exist_ok=True)
+        
+        # save head
+        head_path = f"round_{self.current_round}/head.pt"
+        torch.save(self.base_model.classifier.state_dict(), head_path)
+        
+        self.round_to_adapter[self.current_round] = {"path": None, "head_path": head_path, "num_labels": len(initial_classes)}
+        
+        # Record the classes seen
+        for cls in initial_classes:
+            self.class_to_round[cls] = 0
+
+    def add_new_malware_round(self, new_classes, training_data):
+
+        self.current_round += 1
+
+        truly_new_classes = [cls for cls in new_classes if cls not in self.known_classes]
+        if not truly_new_classes:
+            print("Nessuna classe veramente nuova trovata!")
+            return
+
+        print(f"[Round {self.current_round}] New classes: {truly_new_classes} Siamo nei LoRA")
+
+        lora_model = self._create_lora_for_round(truly_new_classes)
+
+
+        self._train_lora_round(lora_model, training_data, truly_new_classes)
+
+
+        round_dir = f"round_{self.current_round}"
+        os.makedirs(round_dir, exist_ok=True)
+
+        # save LoRA adapter
+        adapter_path = f"round_{self.current_round}/adapter"
+        lora_model.save_pretrained(adapter_path)
+        # extract & save head
+        head_path = f"round_{self.current_round}/head.pt"
+        torch.save(lora_model.base_model.classifier.state_dict(), head_path)
+
+        self.round_to_adapter[self.current_round] = {
+            "path": adapter_path,
+            "head_path": head_path,
+            "num_labels": len(truly_new_classes)
+        }
+
+        # Record the classes seen
+        print(f"\nNuove classi aggiunte: {truly_new_classes} al round {self.current_round}\n")
+        self.known_classes.update(truly_new_classes)
+        self.order_classes.append(truly_new_classes)
+        for cls in truly_new_classes:
+            self.class_to_round[cls] = self.current_round
+
+
+
+    def _create_lora_for_round(self, new_classes):
+        """Create a new LoRA model for the current round"""
+
+        round_model = DistilBertForSequenceClassification.from_pretrained(
+            "distilbert-base-uncased",
+            num_labels=len(new_classes)
+        )
+
+       
+        num_labels = len(new_classes)
+        round_model.classifier = nn.Linear(round_model.config.dim, num_labels).to(self.device)
+
+        
+        lora_model = get_peft_model(round_model, self.lora_config)
+        lora_model.to(self.device)
+        print('creato il modello base copiato + nuova testa per il round: ', self.current_round)
+
+        return lora_model 
+
+    def _train_base_model(self, model, training_data, classes):
+
+        # create & loader; (same as _create_dataset_for_classes)
+
+        dataset = self._create_dataset_for_classes(training_data, self.base_classes)
+        train_loader = DataLoader(dataset, batch_size=32, shuffle=True)
+
+        optimizer = AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=2e-5)
+        criterion = nn.CrossEntropyLoss()
+
+        model.to(self.device)
+        model.train()
+        # training loop (4 epochs)
+        for epoch in range(4):
+            total_loss = 0
+            all_preds = []
+            all_labels = []
+            for batch in tqdm(train_loader, desc=f"Round {self.current_round} - Epoch {epoch+1}"):
+                optimizer.zero_grad()
+                input_ids = batch['input_ids'].to(self.device)
+                attention_mask = batch['attention_mask'].to(self.device)
+                labels = batch['labels'].to(self.device)
+                outputs = model(input_ids=input_ids, attention_mask=attention_mask)
+                logits = outputs.logits
+                loss = criterion(logits, labels)
+                loss.backward()
+                optimizer.step()
+                total_loss += loss.item()
+                
+                # Predictions
+                preds = torch.argmax(outputs.logits, dim=1)
+                all_preds.extend(preds.detach().cpu().numpy())
+                all_labels.extend(labels.detach().cpu().numpy())
+
+            # Metrics
+            epoch_loss = total_loss / len(train_loader)
+            accuracy = accuracy_score(all_labels, all_preds)
+
+            precision, recall, f1, _ = precision_recall_fscore_support(
+               all_labels, all_preds, average="weighted", zero_division=0
+               )
+
+            print(f"Epoch {epoch+1} - Loss: {epoch_loss:.4f} - Acc: {accuracy:.4f} - Prec: {precision:.4f} - Rec: {recall:.4f} - F1: {f1:.4f}")
+
+
+
+    def _train_lora_round(self, lora_model, training_data, target_classes):
+        """Addestra il LoRA solo sui nuovi dati"""
+        print(f"Addestramento LoRA per classi: {target_classes}")
+
+
+        filtered_data = training_data[training_data['Attack_type'].isin(target_classes)]
+
+        # Create datasets and dataloaders for LoRA
+        dataset = self._create_dataset_for_classes(filtered_data, target_classes)
+        dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
+
+
+        optimizer = AdamW(lora_model.parameters(), lr=2e-5)
+        criterion = torch.nn.CrossEntropyLoss()
+        lora_model.to(self.device)
+        lora_model.train()
+        for epoch in range(15):  # Fewer epochs for LoRA
+            total_loss = 0
+            all_preds = []
+            all_labels = []
+            for batch in tqdm(dataloader, desc=f"Round {self.current_round} - Epoch {epoch+1}"):
+                optimizer.zero_grad()
+
+                input_ids = batch['input_ids'].to(self.device)
+                attention_mask = batch['attention_mask'].to(self.device)
+                labels = batch['labels'].to(self.device)
+
+                outputs = lora_model(input_ids=input_ids, attention_mask=attention_mask)
+                loss = criterion(outputs.logits, labels)
+
+                loss.backward()
+                optimizer.step()
+                total_loss += loss.item()
+                # Predictions
+                preds = torch.argmax(outputs.logits, dim=1)
+                all_preds.extend(preds.detach().cpu().numpy())
+                all_labels.extend(labels.detach().cpu().numpy())
+
+
+
+            # Metrics
+            epoch_loss = total_loss / len(dataloader)
+            accuracy = accuracy_score(all_labels, all_preds)
+
+            precision, recall, f1, _ = precision_recall_fscore_support(
+               all_labels, all_preds, average="weighted", zero_division=0
+               )
+
+            print(f"Epoch {epoch+1} - Loss: {epoch_loss:.4f} - Acc: {accuracy:.4f} - Prec: {precision:.4f} - Rec: {recall:.4f} - F1: {f1:.4f}")
+
+
+
+
+    def _create_dataset_for_classes(self, data, target_classes):
+        # same as before
+        """Create a dataset for specific classes"""
+        
+        class FilteredDataset(torch.utils.data.Dataset):
+            def __init__(self, data, classes, tokenizer, max_length):
+                self.data = data
+                self.classes = classes
+                self.tokenizer = tokenizer
+                self.max_length = max_length
+                self.class_to_idx = {cls: i for i, cls in enumerate(classes)} # es: {'normal' : 0, 'ddos': 1, ecc...}
+
+            def __len__(self):
+                return len(self.data)
+
+            def __getitem__(self, idx):
+                row = self.data.iloc[idx]
+                text = " ".join([str(row[col]) for col in self.data.columns
+                                if col not in ['Attack_type', 'Attack_label']])
+
+
+                encodings = self.tokenizer(
+                    text,
+                    padding="max_length",
+                    truncation=True,
+                    max_length=self.max_length,
+                    return_tensors="pt"
+                )
+
+
+                label = self.class_to_idx[row['Attack_type']]
+
+                return {
+                    "input_ids": encodings["input_ids"].squeeze(0),
+                    "attention_mask": encodings["attention_mask"].squeeze(0),
+                    "labels": torch.tensor(label, dtype=torch.long)
+                }
+
+        return FilteredDataset(data, target_classes, self.tokenizer, self.max_length)
+
+
+    #def predict_incremental(self, texts):
+
+        #if self.base_model is None:
+            #raise ValueError("Modello base non inizializzato!")
+
+        # Tokenize input
+        #inputs = self.tokenizer(
+            #texts,
+            #padding="max_length",
+            #truncation=True,
+            #max_length=self.max_length,
+            #return_tensors="pt"
+        #).to(self.device)
+
+
+        #predictions = {}
+
+        #for rnd, info in self.round_to_adapter.items():   # round_to_adapter -> {round: {"path": ..., "head_path": ..., "num_labels": ...}}
+            # load adapter into backbone
+            #if info['path']:
+                #model = PeftModel.from_pretrained(self._get_fresh_base(rnd), info['path']).to(self.device) # QUI CARICO I LoRA
+            #else:
+               #model = self.base_model
+
+            #state_dict = torch.load(info['head_path'], map_location=self.device)
+            #if 'weight' in state_dict and 'bias' in state_dict:
+              # round 0
+              #clean_state_dict = state_dict
+            #else:
+              # round > 0
+              #clean_state_dict = { 'weight': state_dict['original_module.weight'],
+                #'bias': state_dict['original_module.bias']}
+
+            # load head
+            #head = nn.Linear(self.base_model.config.dim, info['num_labels'])
+            #head.load_state_dict(clean_state_dict)
+            #model.base_model.classifier = head.to(self.device)
+
+            #model.eval()
+            #with torch.no_grad():
+                #out = model(**inputs)
+
+                #logits = out.logits.cpu().numpy()
+
+                #round_classes = [cls for cls, r in self.class_to_round.items() if r == rnd] num)
+                #for i, cls in enumerate(round_classes):
+
+                    #if i < logits.shape[1]:
+                         #predictions[cls] = logits[:, i]  # shape: (batch_size,)
+                         
+        #class_names = list(predictions.keys())
+
+
+        #for cls, logits in predictions.items():
+            #print(f"Predizioni PROVA\n")
+            #print(f"[{cls}] → mean={np.mean(logits):.2f}, std={np.std(logits):.2f}, max={np.max(logits):.2f}")
+
+        #logit_matrix = np.stack([predictions[cls] for cls in class_names], axis=1)
+
+
+        #logit_mean = np.mean(logit_matrix, axis=1, keepdims=True)
+        #logit_std = np.std(logit_matrix, axis=1, keepdims=True) + 1e-6
+        #z_normalized_matrix = (logit_matrix - logit_mean) / logit_std
+
+        # Predizione finale: argmax sullo z-score normalizzato
+        #predicted_indices = np.argmax(z_normalized_matrix, axis=1)
+
+        #print("Z-normalized matrix:", z_normalized_matrix)
+        #for idx, cls in enumerate(class_names):
+          #print(f"{cls}: z={z_normalized_matrix[0, idx]:.2f}")
+
+
+        #predicted_classes = [class_names[idx] for idx in predicted_indices] 
+
+        #print('matrice finale', logit_matrix, '\n')
+
+
+        #print('predizione finale', predicted_classes)
+
+        #return predictions
+
+
+    def simulate_federated_rounds(self, data, rounds_config):
+        """
+
+        rounds_config: lista di dizionari con formato:
+        [
+            {"round": 0, "classes": ["Normal", "DDoS_UDP"], "data": df_round_0},
+            {"round": 1, "classes": ["XSS"], "data": df_round_1},
+            ...
+        ]
+        """
+        for round_config in rounds_config:
+            round_num = round_config["round"]
+            classes = round_config["classes"]
+            round_data = round_config["data"] 
+
+            if round_num == 0:
+                self.initialize_base_model(classes, round_data)
+                print(f"Round numero: {round_num} sono nel IF")
+            else:
+                self.add_new_malware_round(classes, round_data)
+                print(f"Round numero: {round_num} sono nel ELSE")
+
+    def get_model_summary(self):
+        """Restituisce un summary dello stato corrente"""
+        summary = {
+            "current_round": self.current_round,
+            "total_classes": len(self.known_classes),
+            "known_classes": list(self.known_classes),
+            "base_classes": self.base_classes,
+            "lora_rounds": list(self.round_to_adapter.keys()),
+            "class_to_round_mapping": self.class_to_round
+        }
+        return summary
+
+    def _get_fresh_base(self, rdn):
+      return AutoModelForSequenceClassification.from_pretrained('distilbert-base-uncased', num_labels=self.round_to_adapter[rdn]['num_labels'])
+
+
+
+    def evaluate_on_dataframe(self, df):
+        """Valuta le performance su un DataFrame di test con metriche"""
+        # saefty check
+        filtered_df = df[df['Attack_type'].isin(self.known_classes)]
+
+        if filtered_df.empty:
+            print("Nessun esempio con classi conosciute nel dataset di test.")
+            return
+
+  
+        dataset = self._create_dataset_for_classes(filtered_df, list(self.known_classes))
+        dataloader = DataLoader(dataset, batch_size=32, shuffle=False)
+
+
+        all_preds = []
+        all_labels = []
+        total_loss = 0.0
+        total_samples = 0
+        criterion = torch.nn.CrossEntropyLoss()
+
+        for batch in tqdm(dataloader, desc="Test set evaluation"):
+            input_ids = batch['input_ids'].to(self.device)
+            attention_mask = batch['attention_mask'].to(self.device)
+            true_labels = batch['labels'].cpu().numpy()
+
+            cls_logits = {}
+
+            for rnd, info in self.round_to_adapter.items(): # round_to_adapter -> {round: {"path": ..., "head_path": ..., "num_labels": ...}}
+              # load adapter into backbone
+              print(f'round:{rnd}')
+
+              if info['path']:
+                model = PeftModel.from_pretrained(self._get_fresh_base(rnd), info['path']).to(self.device) # QUI CARICO I LoRA
+
+              else:
+                model = self.base_model
+                
+
+             
+              state_dict = torch.load(info['head_path'], map_location=self.device)
+              if 'weight' in state_dict and 'bias' in state_dict:
+                # round 0
+                clean_state_dict = state_dict
+              else:
+                # round > 0
+                clean_state_dict = { 'weight': state_dict['original_module.weight'],
+                'bias': state_dict['original_module.bias']}
+
+              # load head
+              print('apply head with ', info['num_labels'])
+              head = nn.Linear(self.base_model.config.dim, info['num_labels'])
+              head.load_state_dict(clean_state_dict)
+              model.base_model.classifier = head.to(self.device) 
+              model.eval()
+              
+              with torch.no_grad():
+                out = model(input_ids, attention_mask)
+                logits = out.logits.cpu().numpy()
+
+                
+                round_classes = [cls for cls, r in self.class_to_round.items() if r == rnd]
+                for i, cls in enumerate(round_classes):
+
+                    if i < logits.shape[1]:
+                         cls_logits[cls] = logits[:, i]  # shape: (batch_size,)
+
+            pred_classes = list(cls_logits.keys())
+
+            z_normalized_logits = { cls: (logits - np.mean(logits)) / (np.std(logits) + 1e-6)
+               for cls, logits in cls_logits .items()}
+
+            logit_matrix = np.stack([z_normalized_logits[cls] for cls in pred_classes], axis=1)
+            pred_indices = np.argmax(logit_matrix, axis=1)
+            preds = [pred_classes[i] for i in pred_indices]
+       
+            idx_to_class = {i: cls for i, cls in enumerate(self.known_classes)}
+
+
+            true_class_names = [idx_to_class[idx] for idx in true_labels]
+
+            all_preds.extend(preds)
+            all_labels.extend(true_class_names)
+
+            # loss
+            label_indices = [pred_classes.index(cls) for cls in true_class_names if cls in pred_classes]
+            label_tensor = torch.tensor(label_indices, dtype=torch.long).to(self.device)
+            logit_tensor = torch.tensor(logit_matrix, dtype=torch.float32).to(self.device)
+
+
+            if label_tensor.shape[0] == logit_tensor.shape[0]:
+               batch_loss = criterion(logit_tensor, label_tensor)
+               total_loss += batch_loss.item() * logit_tensor.size(0)
+               total_samples += logit_tensor.size(0)
+
+            avg_loss = total_loss / total_samples if total_samples > 0 else 0.0
+
+
+        #print('\n', all_preds, '\n')
+        #print('\n', all_labels, '\n')
+
+        complete_list = list(itertools.chain.from_iterable(self.order_classes))
+        print("\nFinal assessment of known classes:")
+        precision, recall, f1, _ = precision_recall_fscore_support(
+            all_labels, all_preds, labels= complete_list, zero_division=0
+        )
+
+        for i, cls in enumerate(complete_list):
+            print(f"{cls} - Precision: {precision[i]:.4f}, Recall: {recall[i]:.4f}, F1: {f1[i]:.4f}")
+
+        accuracy = accuracy_score(all_labels, all_preds)
+        weighted_precision, weighted_recall, weighted_f1, _ = precision_recall_fscore_support(
+        all_labels, all_preds, average="weighted", zero_division=0
+     )
+
+        print(f"\nTotal ccuracy: {accuracy:.4f}")
+        print(f"Precisione avg (weighted): {weighted_precision:.4f}")
+        print(f"Recall avg (weighted): {weighted_recall:.4f}")
+        print(f"F1 avg (weighted): {weighted_f1:.4f}")
+        print(f"Loss: {avg_loss:.4f}")
+        
+
+
+def setup_incremental_experiment(df):
+    """Incremental experiment setup"""
+    rounds_config = [
+        {
+            "round": 0,
+            "classes": ["Normal", "DDoS_UDP", "Password"],  # Initial classes
+            "data": df[df["Attack_type"].isin(["Normal", "DDoS_UDP", "Password"])]
+        },
+        {
+            "round": 1,
+            "classes": ["XSS", "Backdoor"],  # Classes for round 1
+            "data": df[df["Attack_type"].isin(["XSS", "Backdoor"])]
+        },
+        {
+            "round": 2,
+            "classes": ["SQL_injection", "Fingerprinting"],  # Classes for round 2
+            "data": df[df["Attack_type"].isin(["SQL_injection", "Fingerprinting"])] # Prende tutte le RIGHE nel dataset appartenentri all'attacco SQL_injection (tipo di ritorno: pandas.DataFrame)
+        },
+        {
+            "round": 3,
+            "classes": ["MITM", "Port_Scanning"],  # Classes for round 3
+            "data": df[df["Attack_type"].isin(["MITM", "Port_Scanning"])]
+        }
+    ]
+    detector = IncrementalMalwareDetector()
+    # Simulate rounds
+    detector.simulate_federated_rounds(df, rounds_config)
+    return detector
+    
+    
+file_path = ''
+DATASET = file_path
+print(f"[+] Loading dataset {DATASET}...")
+df = pd.read_csv(DATASET)
+train_set, test_set = train_test_split(
+    df, test_size=0.4, random_state=42
+)
+
+train_set, test_set = train_test_split(
+    df, test_size=0.4, random_state=42
+)
+    
+# Train 
+detector = setup_incremental_experiment(train_set)
+# Test
+filtered_data_test = test_set[test_set['Attack_type'].isin(detector.known_classes)] 
+detector.evaluate_on_dataframe(filtered_data_test)
