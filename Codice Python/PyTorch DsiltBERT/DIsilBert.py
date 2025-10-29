@@ -161,5 +161,135 @@ test_dataset = AttackDataset(
 )
 
 
+def evaluate_model(loader):
+    model.eval()
+    total_loss = 0
+    all_labels = []
+    all_preds = []
+
+    with torch.no_grad():
+        for batch in tqdm(loader):
+            input_ids = batch["input_ids"].to(DEVICE)
+            attention_mask = batch["attention_mask"].to(DEVICE)
+            labels = batch["labels"].to(DEVICE)
+
+            outputs = model(input_ids=input_ids, attention_mask=attention_mask)
+            logits = outputs.logits
+
+            loss = criterion(logits, labels)
+            total_loss += loss.item()
+
+            all_labels.extend(labels.cpu().numpy())
+            all_preds.extend(torch.sigmoid(logits).cpu().numpy())
+
+    all_labels = np.array(all_labels)
+    all_preds = np.array(all_preds)
+
+    # **Binarizza le predizioni (0.5 come soglia)**
+    all_preds_binary = (all_preds > 0.5).astype(int)
+
+    # Calcola precision, recall e f1-score con 'macro'
+    precision, recall, f1, _ = precision_recall_fscore_support(
+        all_labels, all_preds_binary, average="macro", zero_division=0
+    )
+
+    # Calcola accuracy
+    accuracy = calculate_accuracy(all_labels, all_preds)
+
+    print(f"Precision: {precision:.4f} - Recall: {recall:.4f} - F1-Score: {f1:.4f}")
+    return total_loss / len(loader), all_labels, all_preds_binary, accuracy
+
+
+train_loss_history = []
+val_loss_history = []
+print(f"[+] Training the model for {EPOCHS} epochs...")
+for epoch in range(EPOCHS):
+    print("\n")
+    train_loss, train_accuracy  = train_model()
+    print(f"Epoch {epoch + 1}/{EPOCHS} | Train Loss: {train_loss:.4f} | Train accuracy: {train_accuracy:.2f}%")
+    val_loss, val_labels, val_preds, val_accuracy = evaluate_model(val_loader)
+
+    train_loss_history.append(train_loss)
+    val_loss_history.append(val_loss)
+
+    print(f"\nEpoch {epoch + 1}/{EPOCHS} | Validation Loss: {val_loss:.4f} | Validation Accuracy: {val_accuracy:.2f}%")
+
+
+plt.figure(figsize=(10, 5))
+plt.plot(train_loss_history, label="Train Loss")
+plt.plot(val_loss_history, label="Validation Loss")
+plt.xlabel("Epochs")
+plt.ylabel("Loss")
+plt.title("Loss Over Epochs")
+plt.legend()
+plt.grid(alpha=0.3)
+
+# Metrica per EDGE
+def metrics_edge(labels, pred, class_splits):
+    preds_binary = (pred > 0.5).astype(int)
+
+    start = 0
+    for i, class_name in enumerate(LABEL_COLUMNS):
+        n_classes = class_splits[i]  # Numero di classi nel gruppo
+        end = start + n_classes
+
+        # Estrai solo le classi corrispondenti
+        labels_group = labels[:, start:end]
+        preds_group = preds_binary[:, start:end]
+
+        # Calcola le metriche con average='macro'
+        precision, recall, f1, _ = precision_recall_fscore_support(
+            labels_group, preds_group, average="macro", zero_division=0
+        )
+
+        print(f"Group {class_name} | Precision: {precision:.4f}, Recall: {recall:.4f}, F1: {f1:.4f}\n")
+        start = end
+
+
+# Metrica per TON
+
+def metrics_ton(labels, pred, class_splits):  #CORRETTA
+    preds_binary = (pred > 0.5).astype(int)
+
+    start = 0
+    for i, class_name in enumerate(LABEL_COLUMNS):
+        n_classes = class_splits[i]  # Numero di classi nel gruppo corrente
+        end = start + n_classes
+
+        # Estrai le colonne per il gruppo corrente
+        labels_group = labels[:, start:end]
+        preds_group = preds_binary[:, start:end]
+
+        # Se il gruppo corrente è "Attack_type", seleziona solo le classi presenti in Dataset 2
+        if class_name == "Attack_type":
+            # Indici relativi all'interno del gruppo "Attack_type" di Dataset 1 per le classi di Dataset 2:
+            selected_indices = [3, 4, 6, 7, 8, 9, 11, 14]
+            # Nota: Poiché in questo gruppo gli indici partono da 0, questi numeri sono validi se il gruppo è completo
+            labels_group = labels_group[:, selected_indices]
+            preds_group = preds_group[:, selected_indices]
+
+
+        # Calcola le metriche per il gruppo corrente
+        precision, recall, f1, _ = precision_recall_fscore_support(
+            labels_group, preds_group, average="macro", zero_division=0
+        )
+
+        print(f"Group {class_name} | Precision: {precision:.4f}, Recall: {recall:.4f}, F1: {f1:.4f}\n")
+        start = end  # Aggiorna "start" per il prossimo gruppo
+
+# Metriche per classe
+def metrics(labels, pred):
+    preds_binary = (pred > 0.5).astype(int)
+    precision, recall, f1, _ = precision_recall_fscore_support(labels, preds_binary, average=None)
+    for i, class_name in enumerate(classi):
+        print(f"Class {class_name} | Precision: {precision[i]:.4f}, Recall: {recall[i]:.4f}, F1: {f1[i]:.4f}\n")
+
+print("[+] Evaluating on the test set...")
+test_loss, test_labels, test_preds, test_accuracy = evaluate_model(test_loader)
+print(f"Train test Loss: {test_loss:.4f} | Train test Accuracy: {test_accuracy:.2f}%")
+metrics(test_labels, test_preds)
+metrics_edge(test_labels, test_preds, num_classes_split) # Per EDGE
+#metrics_ton(test_labels, test_preds, num_classes_split) # Per TON
+
 
 
