@@ -160,6 +160,50 @@ test_dataset = AttackDataset(
     test_texts.tolist(), test_labels.tolist(), tokenizer, MAX_LENGTH, num_classes, label_encoders, LABEL_COLUMNS
 )
 
+optimizer = AdamW(model.parameters(), lr=2e-5)
+criterion = torch.nn.BCEWithLogitsLoss()
+
+def train_model():
+    model.train()
+    total_loss = 0
+    all_preds = []
+    all_labels = []
+
+    for batch in tqdm(train_loader):
+        optimizer.zero_grad()
+        input_ids = batch['input_ids'].to(DEVICE)
+        attention_mask = batch['attention_mask'].to(DEVICE)
+        labels = batch['labels'].to(DEVICE)
+
+        outputs = model(input_ids=input_ids, attention_mask=attention_mask)
+        logits = outputs.logits
+        loss = criterion(logits, labels)
+        loss.backward()
+        optimizer.step()
+
+        total_loss += loss.item()
+
+        # Salva predizioni e label
+        all_preds.extend(torch.sigmoid(logits).detach().cpu().numpy())
+        all_labels.extend(labels.cpu().numpy())
+
+    all_labels = np.array(all_labels)
+    all_preds = np.array(all_preds)
+
+    # **Binarizza le predizioni con soglia 0.5**
+    all_preds_binary = (all_preds > 0.5).astype(int)
+
+    # Calcola accuracy
+    accuracy = calculate_accuracy(all_labels, all_preds)
+
+    # Calcola precision, recall e f1-score con 'macro'
+    precision, recall, f1, _ = precision_recall_fscore_support(
+        all_labels, all_preds_binary, average="macro", zero_division=0
+    )
+
+    print(f"Precision: {precision:.4f} - Recall: {recall:.4f} - F1-Score: {f1:.4f}")
+
+    return total_loss / len(train_loader), accuracy
 
 def evaluate_model(loader):
     model.eval()
@@ -248,7 +292,7 @@ def metrics_edge(labels, pred, class_splits):
 
 # Metrica per TON
 
-def metrics_ton(labels, pred, class_splits):  #CORRETTA
+def metrics_ton(labels, pred, class_splits):
     preds_binary = (pred > 0.5).astype(int)
 
     start = 0
@@ -262,20 +306,20 @@ def metrics_ton(labels, pred, class_splits):  #CORRETTA
 
         # Se il gruppo corrente è "Attack_type", seleziona solo le classi presenti in Dataset 2
         if class_name == "Attack_type":
-            # Indici relativi all'interno del gruppo "Attack_type" di Dataset 1 per le classi di Dataset 2:
+            # Indici relativi all'interno del gruppo "Attack_type" del Dataset EDFE per le classi sole classi del Dataset TON:
             selected_indices = [3, 4, 6, 7, 8, 9, 11, 14]
             # Nota: Poiché in questo gruppo gli indici partono da 0, questi numeri sono validi se il gruppo è completo
             labels_group = labels_group[:, selected_indices]
             preds_group = preds_group[:, selected_indices]
 
 
-        # Calcola le metriche per il gruppo corrente
+       
         precision, recall, f1, _ = precision_recall_fscore_support(
             labels_group, preds_group, average="macro", zero_division=0
         )
 
         print(f"Group {class_name} | Precision: {precision:.4f}, Recall: {recall:.4f}, F1: {f1:.4f}\n")
-        start = end  # Aggiorna "start" per il prossimo gruppo
+        start = end 
 
 # Metriche per classe
 def metrics(labels, pred):
