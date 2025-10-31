@@ -152,7 +152,7 @@ class AttackDataset(Dataset):
         self.max_length = max_length
         self.num_classes = num_classes
         self.label_encoders = label_encoders
-        self.label_columns = label_columns  # Passato correttamente come attributo
+        self.label_columns = label_columns
 
     def __len__(self):
         return len(self.texts)
