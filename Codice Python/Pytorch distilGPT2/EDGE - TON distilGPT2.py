@@ -1,5 +1,4 @@
 import pandas as pd
-import tensorflow as tf
 from transformers import GPT2ForSequenceClassification, GPT2Tokenizer
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
@@ -111,7 +110,6 @@ model.config.pad_token_id = model.config.eos_token_id # per far conoscere al mod
 
 
 
-#NUOVA CLASSE ATTACKDATASET
 class AttackDataset(Dataset):
     def __init__(self, texts, labels, tokenizer, max_length, num_classes, label_encoders, label_columns):
         self.texts = texts
@@ -127,10 +125,10 @@ class AttackDataset(Dataset):
 
     def __getitem__(self, idx):
         text = self.texts[idx]
-        # Inizializza il vettore one-hot con dimensione num_classes
+        # Initialise the one-hot vector with size num_classes
         label_vector = np.zeros(self.num_classes)
 
-        # Calcola gli offset in base alle classi di ciascuna colonna
+        # Calculate offsets based on the classes of each column
         offsets = []
         current_offset = 0
         for col in self.label_columns:
@@ -139,7 +137,7 @@ class AttackDataset(Dataset):
 
 
         for i, lbl in enumerate(self.labels[idx]):
-            # Imposta a 1 nella posizione corretta tenendo conto dell'offset
+            # Set to 1 in the correct position, taking into account the offset
             label_vector[offsets[i] + int(lbl)] = 1
 
         encodings = self.tokenizer(
@@ -190,20 +188,19 @@ def train_model():
 
         total_loss += loss.item()
 
-        # Salva predizioni e label
+        # Save predictions and labels
         all_preds.extend(torch.sigmoid(logits).detach().cpu().numpy())
         all_labels.extend(labels.cpu().numpy())
 
     all_labels = np.array(all_labels)
     all_preds = np.array(all_preds)
 
-    # **Binarizza le predizioni con soglia 0.5**
+    # **Binarise predictions with a threshold of 0.5**
     all_preds_binary = (all_preds > 0.5).astype(int)
 
-    # Calcola accuracy
+
     accuracy = calculate_accuracy(all_labels, all_preds)
 
-    # Calcola precision, recall e f1-score con 'macro'
     precision, recall, f1, _ = precision_recall_fscore_support(
         all_labels, all_preds_binary, average="macro", zero_division=0
     )
@@ -236,10 +233,9 @@ def evaluate_model(loader): #CORRETTA!!
     all_labels = np.array(all_labels)
     all_preds = np.array(all_preds)
 
-    # **Binarizza le predizioni (0.5 come soglia)**
+    # **Binarise predictions with a threshold of 0.5**
     all_preds_binary = (all_preds > 0.5).astype(int)
 
-    # Calcola precision, recall e f1-score con 'macro'
     precision, recall, f1, _ = precision_recall_fscore_support(
         all_labels, all_preds_binary, average="macro", zero_division=0
     )
@@ -275,20 +271,19 @@ plt.title("Loss Over Epochs")
 plt.legend()
 plt.grid(alpha=0.3)
 
-# Metrica per EDGE
+# Metrica for EDGE
 def metrics_edge(labels, pred, class_splits):
     preds_binary = (pred > 0.5).astype(int)
 
     start = 0
     for i, class_name in enumerate(LABEL_COLUMNS):
-        n_classes = class_splits[i]  # Numero di classi nel gruppo
+        n_classes = class_splits[i]  # Number of classes in the group
         end = start + n_classes
 
-        # Estrai solo le classi corrispondenti
+        # Extract only the corresponding classes
         labels_group = labels[:, start:end]
         preds_group = preds_binary[:, start:end]
 
-        # Calcola le metriche con average='macro'
         precision, recall, f1, _ = precision_recall_fscore_support(
             labels_group, preds_group, average="macro", zero_division=0
         )
@@ -297,43 +292,43 @@ def metrics_edge(labels, pred, class_splits):
         start = end
 
 
-# Metrica per TON
-
-def metrics_ton(labels, pred, class_splits):  #CORRETTA
+# Metric for TON
+def metrics_ton(labels, pred, class_splits):
     preds_binary = (pred > 0.5).astype(int)
 
     start = 0
     for i, class_name in enumerate(LABEL_COLUMNS):
-        n_classes = class_splits[i]  # Numero di classi nel gruppo corrente
+        n_classes = class_splits[i]  # Number of classes in the current group
         end = start + n_classes
 
-        # Estrai le colonne per il gruppo corrente
+        # Extract the columns for the current group
         labels_group = labels[:, start:end]
         preds_group = preds_binary[:, start:end]
 
-        # Se il gruppo corrente è "Attack_type", seleziona solo le classi presenti in Dataset 2
+        # If the current group is ‘Attack_type’, select only the classes present in TON.
         if class_name == "Attack_type":
-            # Indici relativi all'interno del gruppo "Attack_type" di Dataset 1 per le classi di Dataset 2:
+            # Relative indices within the ‘Attack_type’ group of Dataset 1 for the classes of TON:
             selected_indices = [3, 4, 6, 7, 8, 9, 11, 14]
-            # Nota: Poiché in questo gruppo gli indici partono da 0, questi numeri sono validi se il gruppo è completo
+    
             labels_group = labels_group[:, selected_indices]
             preds_group = preds_group[:, selected_indices]
 
 
-        # Calcola le metriche per il gruppo corrente
+        # Calculate metrics for the current group
         precision, recall, f1, _ = precision_recall_fscore_support(
             labels_group, preds_group, average="macro", zero_division=0
         )
 
         print(f"Group {class_name} | Precision: {precision:.4f}, Recall: {recall:.4f}, F1: {f1:.4f}\n")
-        start = end  # Aggiorna "start" per il prossimo gruppo
+        start = end  # Update ‘start’ for the next group
 
-# Metriche per classe
+# Metrics by class
 def metrics(labels, pred):
     preds_binary = (pred > 0.5).astype(int)
     precision, recall, f1, _ = precision_recall_fscore_support(labels, preds_binary, average=None)
     for i, class_name in enumerate(classi):
         print(f"Class {class_name} | Precision: {precision[i]:.4f}, Recall: {recall[i]:.4f}, F1: {f1[i]:.4f}\n")
+
 
 print("[+] Evaluating on the test set...")
 test_loss, test_labels, test_preds, test_accuracy = evaluate_model(test_loader)
