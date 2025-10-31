@@ -313,7 +313,7 @@ def metrics_ton(labels, pred, class_splits):
         print(f"Group {class_name} | Precision: {precision:.4f}, Recall: {recall:.4f}, F1: {f1:.4f}\n")
         start = end  # Update ‘start’ for the next group
 
-# Metriche per classe
+# Metrics by class
 def metrics(labels, pred):
     preds_binary = (pred > 0.5).astype(int)
     precision, recall, f1, _ = precision_recall_fscore_support(labels, preds_binary, average=None)
