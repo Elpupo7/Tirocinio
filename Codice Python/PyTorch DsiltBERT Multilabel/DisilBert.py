@@ -17,10 +17,11 @@ DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 DATASET = 'EdgeIoT_250_rows.csv'
 #DATASET = 'TON_350_rows.csv' #Per TON
 LABEL_COLUMNS = ["Attack_type","Attack_label"]
-EPOCHS = 3
-BATCH_SIZE = 32
 MAX_LENGTH = 128
-MODEL_NAME = 'distilgpt2'
+batch_size = 32
+EPOCHS = 4
+DATASET = file_path
+MODEL_NAME = 'distilbert-base-uncased'
 
   def calculate_accuracy(labels, preds, threshold=0.5):
       preds_binary = (preds > threshold).astype(int)
@@ -87,13 +88,10 @@ train_texts, val_texts, train_labels, val_labels = train_test_split(
 )
 
 print(f"[+] Loading tokenizer and model: {MODEL_NAME}")
-tokenizer = GPT2Tokenizer.from_pretrained(MODEL_NAME)
-# GPT2 pad token 
-tokenizer.pad_token = tokenizer.eos_token
+tokenizer = DistilBertTokenizer.from_pretrained(MODEL_NAME)
 
-model = GPT2ForSequenceClassification.from_pretrained(MODEL_NAME, num_labels= num_classes).to(DEVICE)
-model.config.pad_token_id = model.config.eos_token_id # per far conoscere al modello il token di padding:
-
+model = DistilBertForSequenceClassification.from_pretrained(MODEL_NAME, num_labels=num_classes)
+model.to(DEVICE)
 
 # LoRa per TON
 #lora_config = LoraConfig(
@@ -108,7 +106,6 @@ model.config.pad_token_id = model.config.eos_token_id # per far conoscere al mod
 #model = get_peft_model(model, lora_config)
 #model.to(DEVICE)
 
-#NUOVA CLASSE ATTACKDATASET
 class AttackDataset(Dataset):
     def __init__(self, texts, labels, tokenizer, max_length, num_classes, label_encoders, label_columns):
         self.texts = texts
@@ -124,10 +121,10 @@ class AttackDataset(Dataset):
 
     def __getitem__(self, idx):
         text = self.texts[idx]
-        # Inizializza il vettore one-hot con dimensione num_classes
+        # Initialise the one-hot vector with size num_classes
         label_vector = np.zeros(self.num_classes)
 
-        # Calcola gli offset in base alle classi di ciascuna colonna
+        # Calculate offsets based on the classes of each column
         offsets = []
         current_offset = 0
         for col in self.label_columns:
@@ -136,19 +133,18 @@ class AttackDataset(Dataset):
 
 
         for i, lbl in enumerate(self.labels[idx]):
-            # Imposta a 1 nella posizione corretta tenendo conto dell'offset
+            # Set to 1 in the correct position, taking into account the offset
             label_vector[offsets[i] + int(lbl)] = 1
 
         encodings = self.tokenizer(
-            text, padding="max_length", truncation=True, max_length=self.max_length, return_tensors="pt" 
-                                    
+            text, padding="max_length", truncation=True, max_length=self.max_length, return_tensors="pt"
         )
         return {
-            "input_ids": encodings["input_ids"].squeeze(0), 
-            "attention_mask": encodings["attention_mask"].squeeze(0), 
-      
+            "input_ids": encodings["input_ids"].squeeze(0),
+            "attention_mask": encodings["attention_mask"].squeeze(0),
             "labels": torch.tensor(label_vector, dtype=torch.float),
         }
+
 
 train_dataset = AttackDataset(
     train_texts.tolist(), train_labels.tolist(), tokenizer, MAX_LENGTH, num_classes, label_encoders, LABEL_COLUMNS
@@ -159,6 +155,7 @@ val_dataset = AttackDataset(
 test_dataset = AttackDataset(
     test_texts.tolist(), test_labels.tolist(), tokenizer, MAX_LENGTH, num_classes, label_encoders, LABEL_COLUMNS
 )
+
 
 optimizer = AdamW(model.parameters(), lr=2e-5)
 criterion = torch.nn.BCEWithLogitsLoss()
@@ -183,20 +180,19 @@ def train_model():
 
         total_loss += loss.item()
 
-        # Salva predizioni e label
+        # Save predictions and labels
         all_preds.extend(torch.sigmoid(logits).detach().cpu().numpy())
         all_labels.extend(labels.cpu().numpy())
 
     all_labels = np.array(all_labels)
     all_preds = np.array(all_preds)
 
-    # **Binarizza le predizioni con soglia 0.5**
+    # **Binarise predictions with a threshold of 0.5**
     all_preds_binary = (all_preds > 0.5).astype(int)
 
-    # Calcola accuracy
+    
     accuracy = calculate_accuracy(all_labels, all_preds)
 
-    # Calcola precision, recall e f1-score con 'macro'
     precision, recall, f1, _ = precision_recall_fscore_support(
         all_labels, all_preds_binary, average="macro", zero_division=0
     )
@@ -229,15 +225,14 @@ def evaluate_model(loader):
     all_labels = np.array(all_labels)
     all_preds = np.array(all_preds)
 
-    # **Binarizza le predizioni (0.5 come soglia)**
+    # **Binarise predictions with a threshold of 0.5**
     all_preds_binary = (all_preds > 0.5).astype(int)
 
-    # Calcola precision, recall e f1-score con 'macro'
+    
     precision, recall, f1, _ = precision_recall_fscore_support(
         all_labels, all_preds_binary, average="macro", zero_division=0
     )
 
-    # Calcola accuracy
     accuracy = calculate_accuracy(all_labels, all_preds)
 
     print(f"Precision: {precision:.4f} - Recall: {recall:.4f} - F1-Score: {f1:.4f}")
@@ -268,20 +263,19 @@ plt.title("Loss Over Epochs")
 plt.legend()
 plt.grid(alpha=0.3)
 
-# Metrica per EDGE
+# Metrica for EDGE
 def metrics_edge(labels, pred, class_splits):
     preds_binary = (pred > 0.5).astype(int)
 
     start = 0
     for i, class_name in enumerate(LABEL_COLUMNS):
-        n_classes = class_splits[i]  # Numero di classi nel gruppo
+        n_classes = class_splits[i]  # Number of classes in the group
         end = start + n_classes
 
-        # Estrai solo le classi corrispondenti
+        # Extract only the corresponding classes
         labels_group = labels[:, start:end]
         preds_group = preds_binary[:, start:end]
 
-        # Calcola le metriche con average='macro'
         precision, recall, f1, _ = precision_recall_fscore_support(
             labels_group, preds_group, average="macro", zero_division=0
         )
@@ -289,37 +283,35 @@ def metrics_edge(labels, pred, class_splits):
         print(f"Group {class_name} | Precision: {precision:.4f}, Recall: {recall:.4f}, F1: {f1:.4f}\n")
         start = end
 
-
-# Metrica per TON
-
+# Metric for TON
 def metrics_ton(labels, pred, class_splits):
     preds_binary = (pred > 0.5).astype(int)
 
     start = 0
     for i, class_name in enumerate(LABEL_COLUMNS):
-        n_classes = class_splits[i]  # Numero di classi nel gruppo corrente
+        n_classes = class_splits[i]  # Number of classes in the current group
         end = start + n_classes
 
-        # Estrai le colonne per il gruppo corrente
+        # Extract the columns for the current group
         labels_group = labels[:, start:end]
         preds_group = preds_binary[:, start:end]
 
-        # Se il gruppo corrente è "Attack_type", seleziona solo le classi presenti in Dataset 2
+        # If the current group is ‘Attack_type’, select only the classes present in TON.
         if class_name == "Attack_type":
-            # Indici relativi all'interno del gruppo "Attack_type" del Dataset EDFE per le classi sole classi del Dataset TON:
+            # Relative indices within the ‘Attack_type’ group of Dataset 1 for the classes of TON:
             selected_indices = [3, 4, 6, 7, 8, 9, 11, 14]
-            # Nota: Poiché in questo gruppo gli indici partono da 0, questi numeri sono validi se il gruppo è completo
+    
             labels_group = labels_group[:, selected_indices]
             preds_group = preds_group[:, selected_indices]
 
 
-       
+        # Calculate metrics for the current group
         precision, recall, f1, _ = precision_recall_fscore_support(
             labels_group, preds_group, average="macro", zero_division=0
         )
 
         print(f"Group {class_name} | Precision: {precision:.4f}, Recall: {recall:.4f}, F1: {f1:.4f}\n")
-        start = end 
+        start = end  # Update ‘start’ for the next group
 
 # Metriche per classe
 def metrics(labels, pred):
