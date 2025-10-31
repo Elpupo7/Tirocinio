@@ -41,7 +41,7 @@ train_texts, val_texts, train_labels, val_labels = train_test_split(train_texts,
   tokenizer = T5Tokenizer.from_pretrained(MODEL_NAME, legacy=False)
   model = T5ForConditionalGeneration.from_pretrained(MODEL_NAME).to(DEVICE)
 
-#Per addestrare i LORA su TON
+# To train LORAs on TON
 #lora_config = LoraConfig(
 #        r=32,
 #        lora_alpha=64,
@@ -104,10 +104,10 @@ train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
 val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE,shuffle=True)
 test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=True)
 
-# Optimizer PER IL MODELLO
+# Optimizer  for model
 optimizer = AdamW(model.parameters(), lr=5e-5)
 
-# Optimizer PER i LoRA
+# Optimizer for LoRA
 #optimizer = AdamW(model.parameters(), lr=1e-4)
 
 
